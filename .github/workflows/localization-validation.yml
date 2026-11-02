@@ -1,0 +1,39 @@
+name: Validate localization proposal
+on:
+  push:
+    branches: [codex/validate-simplified-chinese]
+concurrency:
+  group: localization-validation
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  swift-tests:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ko, zh-Hans]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select app language
+        env:
+          APP_LANGUAGE: ${{ matrix.language }}
+        run: defaults write NSGlobalDomain AppleLanguages -array "$APP_LANGUAGE"
+      - name: Check source data invariants
+        run: |
+          python3 -m venv "$RUNNER_TEMP/checkenv"
+          "$RUNNER_TEMP/checkenv/bin/pip" install pillow
+          "$RUNNER_TEMP/checkenv/bin/python" verify/check_data.py
+      - name: Run Swift tests
+        run: swift test
+      - name: Build universal app
+        run: ./build-app.sh
+      - name: Package preview build
+        if: matrix.language == 'zh-Hans'
+        run: ditto -c -k --keepParent dist/TokenPlant.app dist/TokenPlant-localized.zip
+      - uses: actions/upload-artifact@v4
+        if: matrix.language == 'zh-Hans'
+        with:
+          name: TokenPlant-universal-localization-preview
+          path: dist/TokenPlant-localized.zip
